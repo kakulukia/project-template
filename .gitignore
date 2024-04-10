@@ -34,4 +34,5 @@ config.py
 live-config.py
 routes.py
 .env
+.venv
 storage
