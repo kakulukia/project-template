@@ -1,12 +1,17 @@
+import json
+import os
 from datetime import datetime
 
 from jesse.strategies import Strategy, cached
 import jesse.indicators as ta
+import jesse.helpers as jh
 from jesse import utils
 from icecream import ic
 from custom_indicators import cae, ott, st
 import JesseTradingViewLightReport
 import pytz
+from jesse.store import store
+from jesse.config import config
 
 
 def chop_value(value):
@@ -39,24 +44,50 @@ class Rente2(Strategy):
     Dieses Mal probieren wir Optimized Trend Tracker, Simple Trender und Chop and Explode
     """
 
+    def __init__(self):
+        super().__init__()
+        self.reset_vars()
+
+    def reset_vars(self):
+        self.vars['starting_downtrend_found'] = False
+        self.vars['good_candles'] = 0
+        self.vars['max_chop_value'] = 0
+        self.vars['max_profit'] = 0
+
     @property
     def date(self):
-        return datetime.fromtimestamp(self.current_candle[0] / 1000, tz=pytz.utc).isoformat()
+        return datetime.fromtimestamp(self.current_candle[0] / 1000, tz=pytz.utc).strftime('%Y-%m-%d %H:%M')
 
     def should_long(self) -> bool:
-        chop = cae(self.candles)
-
+        prev_chop, chop = cae(self.candles, sequential=True)[-2:]
         trender = st(self.candles, sequential=True)
+        chop_cat = chop_value(chop)
+        buy = trender.buy_signal[-1]
 
-        val = chop_value(chop)
-        if val in ["up", "tight-up"]:
-            # ic(self.date)
-            # ic(val)
-            if trender.buy_signal[-1]:
-                # ic(trender.buy_signal[-1])
-                if self.price > trender.long_ema[-1]:
-                    # ic(self.price, trender.long_ema[-1])
-                    # ic(self.open, self.high, self.low, self.close)
+        if not buy:
+            self.reset_vars()
+            if not self.vars['starting_downtrend_found']:
+                self.vars['starting_downtrend_found'] = True
+            return False
+
+        if buy:
+            if not self.vars['starting_downtrend_found']:
+                return False
+            self.vars['good_candles'] += 1
+            self.vars['max_chop_value'] = max(self.vars['max_chop_value'], chop)
+            ic(self.date, chop_cat)
+
+            min_chop = 55
+            downtrend = trender.long_ema[-2] > trender.long_ema[-1]
+            if downtrend:
+                min_chop = 60
+            ic(downtrend, chop)
+            if chop > min_chop:
+                if downtrend:
+                    if prev_chop > 55 and trender.short_ema[-1] > trender.mvwap[-1]:
+                        # breakpoint()
+                        return True
+                else:
                     # breakpoint()
                     return True
         return False
@@ -86,12 +117,41 @@ class Rente2(Strategy):
         # ic("current stop loss", stop)
 
         chop = cae(self.candles)
-        val = chop_value(chop)
-        trender = st(self.candles)
-        if val == "down" or self.price < trender.short_ema or not trender.buy_signal:
-            # ic(self.date, val)
-            # ic(self.position.pnl_percentage)
+        chop_cat = chop_value(chop)
+        trender = st(self.candles, sequential=True)
+        downtrend = trender.long_ema[-2] > trender.long_ema[-1]
+
+        self.vars['max_profit'] = max(self.vars['max_profit'], self.position.pnl_percentage)
+
+        buy_signal = trender.buy_signal[-1]
+        if buy_signal:
+            self.vars['good_candles'] += 1
+            self.vars['max_chop_value'] = max(self.vars['max_chop_value'], chop)
+
+        sell = False
+        min_chop = 50 if downtrend else 45
+        max_chop_loose = 10 if downtrend else 17
+        if self.position.pnl_percentage < self.vars['max_profit'] * 0.75:
+            ic("sorted out for bad profit")
+            sell = True
+        if chop < min_chop:
+            ic("sorted out for bad chop value < 50")
+            sell = True
+        if self.price < trender.short_ema[-1]:
+            ic("sorted out for price below short ema")
+            sell = True
+        if not buy_signal:
+            ic("sorted out because of sell signal")
+            sell = True
+        if chop < self.vars['max_chop_value'] - max_chop_loose:
+            ic("sorted out because chop value got too low")
+            sell = True
+
+        if sell:
+            ic(self.date, chop_cat)
+            ic(round(self.position.pnl_percentage, 2))
             # breakpoint()
+            self.reset_vars()
             self.liquidate()
 
     # def on_open_position(self, order) -> None:
@@ -106,8 +166,52 @@ class Rente2(Strategy):
         pass
 
     def terminate(self):
-        JesseTradingViewLightReport.generateReport(
-            customData={
-                "cae": {"data": cae(self.candles, sequential=True), "options": {"pane": 2}},
-            }
-        )
+        # self.store_json()
+        ...
+
+    def store_json(self):
+        start_date = str(datetime.fromtimestamp(store.app.starting_time / 1000))[0:10]
+        finish_date = str(datetime.fromtimestamp(store.app.time / 1000))[0:10]
+        exchange = 'BF' if self.exchange == 'Binance Perpetual Futures' else self.exchange
+        sid = jh.get_session_id()
+        file_name = f"{self.name.__name__}_{exchange}_{self.symbol}_{self.timeframe}_{start_date}_{finish_date}_{sid}"
+        trades_json = {'trades': [], 'considering_timeframes': config['app']['considering_timeframes']}
+        for t in store.completed_trades.trades:
+            trades_json['trades'].append(self.to_json(t))
+
+        json_path = f'storage/json/{file_name}.json'
+        ic(json_path)
+
+        os.makedirs('./storage/json', exist_ok=True)
+        with open(json_path, 'w+') as outfile:
+            def set_default(obj):
+                if isinstance(obj, set):
+                    return list(obj)
+                raise TypeError
+
+            json.dump(trades_json, outfile, default=set_default)
+
+    @staticmethod
+    def to_json(trade):
+        orders = [o.__dict__ for o in trade.orders]
+        exchange = 'Binance Futures' if trade.exchange == 'Binance Perpetual Futures' else trade.exchange
+        return {
+            "id": trade.id,
+            "strategy_name": trade.strategy_name.__name__,
+            "symbol": trade.symbol,
+            "exchange": exchange,
+            "type": trade.type,
+            "entry_price": trade.entry_price,
+            "exit_price": trade.exit_price,
+            "qty": trade.qty,
+            "fee": trade.fee,
+            "size": trade.size,
+            "PNL": trade.pnl,
+            "PNL_percentage": trade.pnl_percentage,
+            "holding_period": trade.holding_period,
+            "opened_at": trade.opened_at,
+            "closed_at": trade.closed_at,
+            "entry_candle_timestamp": trade.opened_at,
+            "exit_candle_timestamp": trade.closed_at,
+            "orders": orders,
+        }

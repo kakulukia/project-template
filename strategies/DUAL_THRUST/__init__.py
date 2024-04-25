@@ -6,6 +6,7 @@ import numpy as np
 # https://medium.com/@gaea.enquiries/quantitative-strategy-research-series-one-the-dual-thrust-38380b38c2fa
 # Dual Thrust by Michael Chalek
 
+
 class DUAL_THRUST(Strategy):
 
     def should_long(self) -> bool:

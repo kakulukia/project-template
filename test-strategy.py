@@ -1,3 +1,5 @@
+from datetime import datetime
+
 import jesse.helpers as jh
 from icecream import ic
 from jesse.enums import exchanges, timeframes
@@ -5,32 +7,37 @@ from jesse.research import backtest, get_candles
 
 # configure your test values here
 ################################################
-from strategies.X import YourStrategy
+# from strategies.Rente3_ChopSTC import Rente3_ChopSTC
+# strategy_class = Rente3_ChopSTC
+from strategies.testerei import Testerei
+strategy_class = Testerei
 
-start = '2024-01-01'
-end = '2024-04-01'
+start = jh.date_to_timestamp('2024-04-01')
+end = jh.date_to_timestamp('2024-04-24')
 
 symbols = [
-    'BTC-USDT',
-    'ETH-USDT',
+    # 'BTC-USDT',
+    # 'ETH-USDT',
     # 'SOL-USDT',
     'DOGE-USDT',
     # 'LTC-USDT',
     # 'FET-USDT',
     # 'PEPE-USDT',
     # 'SHIB-USDT',
+    # 'BONK-USDT',
+    # 'PEPE-USDT',
 ]
 
 time_frames = [
     # '1m',
     # '3m',
     # '5m',
-    # '15m',
-    # '30m',
-    # '45m',
-    # '1h',
-    # '2h',
-    # '3h',
+    '15m',
+    '30m',
+    '45m',
+    '1h',
+    '2h',
+    '3h',
     '4h',
     '6h',
     '8h',
@@ -55,7 +62,7 @@ config = {
     # only used if type is 'futures'
     'futures_leverage_mode': 'cross',
     'exchange': exchange_name,
-    'warm_up_candles': 200
+    'warm_up_candles': 700
 }
 
 results = {}
@@ -68,17 +75,26 @@ for symbol in symbols:
         if time_frame not in results:
             results[time_frame] = []
 
-        warmup_candles = config['warm_up_candles'] * jh.timeframe_to_one_minutes(time_frame)
-        candles = get_candles(exchange_name, symbol, '1m', start, end, warmup_candles=warmup_candles)
+        warmup_candles_num = config['warm_up_candles'] * jh.timeframe_to_one_minutes(time_frame)
+        warmup_set, test_set = get_candles(
+            exchange_name, symbol, '1m',
+            start, end, warmup_candles_num=warmup_candles_num, is_for_jesse=True)
         routes = [
-            {'exchange': exchange_name, 'strategy': Rente2, 'symbol': symbol, 'timeframe': time_frame}
+            {'exchange': exchange_name, 'strategy': strategy_class, 'symbol': symbol, 'timeframe': time_frame}
         ]
         extra_routes = []
         test_candles = {
             jh.key(exchange_name, symbol): {
                 'exchange': exchange_name,
                 'symbol': symbol,
-                'candles': candles,
+                'candles': test_set,
+            },
+        }
+        warmup_candles = {
+            jh.key(exchange_name, symbol): {
+                'exchange': exchange_name,
+                'symbol': symbol,
+                'candles': warmup_set,
             },
         }
 
@@ -87,7 +103,8 @@ for symbol in symbols:
             config,
             routes,
             extra_routes,
-            test_candles,
+            candles=test_candles,
+            warmup_candles=warmup_candles,
             generate_charts=True,
         )
         print("====================================================")
