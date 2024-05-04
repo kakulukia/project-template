@@ -1,6 +1,8 @@
+from abc import ABC
 from datetime import datetime
 
-from jesse.strategies import Strategy, cached
+from jesse.strategies import Strategy
+from jesse import indicators as ta
 import pytz
 
 
@@ -29,7 +31,7 @@ def chop_value(value):
     return "chop"
 
 
-class RentenStrategy(Strategy):
+class RentenStrategy(Strategy, ABC):
     def __init__(self):
         super().__init__()
         self.reset_vars()
@@ -40,3 +42,56 @@ class RentenStrategy(Strategy):
     @property
     def date(self):
         return datetime.fromtimestamp(self.current_candle[0] / 1000, tz=pytz.utc).strftime('%Y-%m-%d %H:%M')
+
+    @property
+    def tr(self):
+        """
+        True Range
+        :return:
+        """
+        return ta.trange(self.candles)
+
+    @property
+    def tr_p(self):
+        """
+        True Range Percentage
+        :return:
+        """
+        return self.tr / self.atr_short * 100
+
+    @property
+    def range(self):
+        return self.close - self.open
+
+    @property
+    def range_p(self):
+        return self.range / self.atr_short * 100
+
+    @property
+    def atr_short(self):
+        """
+        Average True Range 7 candles
+        :return:
+        """
+        return ta.atr(self.candles, period=7)
+
+    @property
+    def atr(self):
+        """
+        Average True Range
+        :return:
+        """
+        return ta.atr(self.candles, period=14)  #14 period ATR used for calculating stop loss
+
+    @property
+    def up(self):
+        return self.close > self.open
+
+    @property
+    def down(self):
+        return self.close < self.open
+
+    @property
+    def strong(self):
+        return self.range_p > 25 and ((self.range_p / self.tr_p * 100) > 30)
+

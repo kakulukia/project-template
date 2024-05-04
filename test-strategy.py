@@ -9,8 +9,8 @@ from jesse.research import backtest, get_candles
 ################################################
 # from strategies.Rente3_ChopSTC import Rente3_ChopSTC
 # strategy_class = Rente3_ChopSTC
-from strategies.testerei import Testerei
-strategy_class = Testerei
+from strategies.Rente4_WVF import Rente4_WVF
+strategy_class = Rente4_WVF
 
 start = jh.date_to_timestamp('2024-04-01')
 end = jh.date_to_timestamp('2024-04-24')
@@ -20,12 +20,12 @@ symbols = [
     # 'ETH-USDT',
     # 'SOL-USDT',
     'DOGE-USDT',
+    # 'BNB-USDT',
     # 'LTC-USDT',
     # 'FET-USDT',
     # 'PEPE-USDT',
     # 'SHIB-USDT',
     # 'BONK-USDT',
-    # 'PEPE-USDT',
 ]
 
 time_frames = [
@@ -43,6 +43,15 @@ time_frames = [
     '8h',
     '12h',
     '1D',
+    # '45m',
+    # '1h',
+    # '2h',
+    # '3h',
+    # '4h',
+    # '6h',
+    # '8h',
+    # '12h',
+    # '1D',
     # '3D',
     # '1W',
     # '1M',
@@ -106,6 +115,8 @@ for symbol in symbols:
             candles=test_candles,
             warmup_candles=warmup_candles,
             generate_charts=True,
+            generate_tradingview=True,
+            generate_quantstats=True,
         )
         print("====================================================")
         print(f"Results for {symbol} on {time_frame}")
