@@ -1,21 +1,24 @@
 from abc import ABC
-from datetime import datetime
 
 from jesse.strategies import Strategy
 from jesse import indicators as ta
 import pytz
+import json
+from dataclasses import dataclass, asdict
+from datetime import datetime
 
 
 def chop_value(value):
     """
     The chop is RSI movement between 40 and 60
     tight chop is RSI movement between 45 and 55. There should be an explosion after RSI breaks through 60 (long) or
-    40 (short). Tight chop bars are colored black, a series of black bars is tight consolidation and should explode imminently.
-    The longer the chop the longer the explosion will go for. tighter the better.
+    40 (short). Tight chop bars are colored black, a series of black bars is tight consolidation and should explode
+    imminently. The longer the chop the longer the explosion will go for. tighter the better.
 
     Loose chop (whip saw/yellow bars) will range between 40 and 60.
     the move begins with blue bars for long and purple bars for short.
-    Couple it with your trading system to help stay out of chop and enter when there is movement. Use with "Simple Trender."
+    Couple it with your trading system to help stay out of chop and enter when there is movement.
+    Use with "Simple Trender."
 
     :param value:
     :return up, chop, down and tight:
@@ -31,10 +34,22 @@ def chop_value(value):
     return "chop"
 
 
+@dataclass
+class Trade:
+    start: str
+    exit: str = None
+    exit_ts: int = None
+    pnl_percentage: float = None
+
+    def to_dict(self):
+        return asdict(self)
+
+
 class RentenStrategy(Strategy, ABC):
     def __init__(self):
         super().__init__()
         self.reset_vars()
+        self.debug = False
 
     def reset_vars(self):
         ...
@@ -68,6 +83,10 @@ class RentenStrategy(Strategy, ABC):
         return self.range / self.atr_short * 100
 
     @property
+    def percent(self):
+        return (self.close / self.open - 1) * 100
+
+    @property
     def atr_short(self):
         """
         Average True Range 7 candles
@@ -93,5 +112,23 @@ class RentenStrategy(Strategy, ABC):
 
     @property
     def strong(self):
-        return self.range_p > 25 and ((self.range_p / self.tr_p * 100) > 30)
+        return abs(self.range_p) > 25 and (abs(self.range_p / self.tr_p * 100) > 30)
 
+    def save_trades(self):
+        if not self.debug:
+            return
+        filename = 'trades.json'
+        trades_dict = [trade.to_dict() for trade in self.vars['trades']]
+        with open(filename, 'w') as f:
+            json.dump(trades_dict, f, indent=2)
+
+    def load_trades(self):
+        if not self.debug:
+            return
+        filename = 'trades.json'
+        try:
+            with open(filename, 'r') as f:
+                trades_dict = json.load(f)
+            self.vars.prev_trades = [Trade(**trade) for trade in trades_dict]
+        except FileNotFoundError:
+            pass
