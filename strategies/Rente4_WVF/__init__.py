@@ -15,7 +15,7 @@ class Rente4_WVF(RentenStrategy):
         super().__init__()
         self.stop_loss_percentage = 0.97  # 3% stop loss
 
-        self.debug = True
+        self.debug = False
         self.record_trades = False
         self.load_trades()
 
@@ -60,7 +60,7 @@ class Rente4_WVF(RentenStrategy):
             signal_length = int(signals_in_a_row + signal_length)
 
             # check for the latest low
-            lookback_candles = 7
+            lookback_candles = 77
             lowest_low = np.min(self.candles[-lookback_candles:, 4])
             highest_high = np.max(self.candles[-lookback_candles:, 3])
             high_index = np.argmax(self.candles[-lookback_candles:, 3])
@@ -161,7 +161,7 @@ class Rente4_WVF(RentenStrategy):
             #         ic("tr_p > 100")
             #         trade = True
 
-            if trade and high_percentage > 5:
+            if trade and self.short_term_high > 5:
                 if self.close == lowest_close:
                     ic("free fall - not trading")
                     trade = False
@@ -271,8 +271,9 @@ class Rente4_WVF(RentenStrategy):
             self.stop_loss = self.position.qty, stop_loss
 
         if self.vars['max_profit'] < 5 < self.position.pnl_percentage:
-            ic("trying to take profit at 5% - 1.5% stop loss")
-            self.take_profit = self.position.qty, self.close * 0.987
+            take_profit = f"trying to take profit at 5% - 1.7% stop loss {self.close * 0.983}"
+            ic(take_profit)
+            self.take_profit = self.position.qty, self.close * 0.983
 
         self.vars['max_profit'] = max(self.vars['max_profit'], self.position.pnl_percentage)
 
@@ -346,4 +347,10 @@ class Rente4_WVF(RentenStrategy):
         #     direction = 0  # Sideways direction
 
         return lower_percentage * 100
+
+    @property
+    def short_term_high(self, length=7):
+        high_prices = self.candles[-length:, 3]
+        high = np.max(high_prices)
+        return (self.close / high - 1) * 100
 
