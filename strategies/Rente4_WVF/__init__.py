@@ -1,5 +1,6 @@
+from random import random
+
 import numpy as np
-from benedict import benedict
 import jesse.indicators as ta
 from jesse import utils
 from custom_indicators.wrvf import williams_vix_fix as wrvf
@@ -14,14 +15,24 @@ class Rente4_WVF(RentenStrategy):
         super().__init__()
         self.stop_loss_percentage = 0.97  # 3% stop loss
 
-        self.debug = False
-        self.test_mode = False
+        self.debug = True
+        self.record_trades = False
         self.load_trades()
+
+        if not self.debug:
+            ic.disable()
 
     def reset_vars(self):
         self.vars.max_profit = 0
 
     def should_long(self) -> bool:
+
+        # stop_here = False
+        # if random() > 0.95:
+        #     stop_here = True
+        #     ic.enable()
+        # else:
+        #     ic.disable()
 
         # preparation
         ################################################################################################################
@@ -81,6 +92,10 @@ class Rente4_WVF(RentenStrategy):
                     lookback += 1
                 min_signal_strength += bad_trades * 1.5
 
+                # good trade bonus
+                if self.vars.trades[-lookback].pnl_percentage > 5:
+                    min_signal_strength -= 1
+
             # slight upwards movement gets rewarded
             if 45 < self.lower_percentage < 65:
                 min_signal_strength /= 2
@@ -128,23 +143,23 @@ class Rente4_WVF(RentenStrategy):
                 ic(f"{signals_in_a_row} > 5 - not trading")
                 trade = False
 
-            if trade and not self.strong:
-                ic("not strong enough")
-                ic(
-                    self.range_p, self.range_p > 25, self.tr_p,
-                    (self.range_p / self.tr_p * 100),
-                    ((self.range_p / self.tr_p * 100) > 30)
-                )
-                trade = False
-
-                upward_movement = (self.close / lowest_low - 1) * 100
-                if upward_movement > 2:
-                    ic(upward_movement)
-                    trade = True
-
-                if self.tr_p > 100:
-                    ic("tr_p > 100")
-                    trade = True
+            # if trade and not self.strong:
+            #     ic("not strong enough")
+            #     ic(
+            #         self.range_p, self.range_p > 25, self.tr_p,
+            #         (self.range_p / self.tr_p * 100),
+            #         ((self.range_p / self.tr_p * 100) > 30)
+            #     )
+            #     trade = False
+            #
+            #     upward_movement = (self.close / lowest_low - 1) * 100
+            #     if upward_movement > 2:
+            #         ic(upward_movement)
+            #         trade = True
+            #
+            #     if self.tr_p > 100:
+            #         ic("tr_p > 100")
+            #         trade = True
 
             if trade and high_percentage > 5:
                 if self.close == lowest_close:
@@ -163,11 +178,12 @@ class Rente4_WVF(RentenStrategy):
                         trade = False
 
             if trade and self.down:
-                ic("downwards movement - not trading")
-                trade = False
+                if self.lower_percentage < 77 or self.tr_p > 100:
+                    ic("downwards movement - not trading")
+                    trade = False
 
-        if self.date == '2024-05-04 02:30':
-            breakpoint()
+        # if self.date == '2024-05-04 02:30':
+        #     breakpoint()
 
         if trade:
             ic(trade)
@@ -183,6 +199,16 @@ class Rente4_WVF(RentenStrategy):
             if stop and self.debug:
                 breakpoint()
 
+            # if stop_here:
+            #     breakpoint()
+        else:
+            next_trade_index = len(self.vars.trades)
+            if self.vars.prev_trades and len(self.vars.prev_trades) > next_trade_index:
+                next_trade = self.vars.prev_trades[next_trade_index]
+                if self.date == next_trade.start:
+                    ic("WE FORGOT SOMETHING")
+                    breakpoint()
+
         return trade
 
     def go_long(self):
@@ -194,7 +220,6 @@ class Rente4_WVF(RentenStrategy):
         stop_atr = self.close - 2 * self.atr
         stop_percent = self.close * self.stop_loss_percentage
         stop_price = min(stop_atr, stop_percent)
-        self.vars.stop_loss_range = self.close - stop_price
         ic(stop_atr, stop_percent)
 
         ic(f"setting stop price at {stop_price}")
@@ -224,7 +249,7 @@ class Rente4_WVF(RentenStrategy):
         # update stop loss
         sl_last = self.stop_loss[0][1] if self.stop_loss is not None else 0
         if self.position.pnl_percentage > self.vars['max_profit']:
-            sl_percent = self.close - self.vars.stop_loss_range
+            sl_percent = self.close * self.stop_loss_percentage
             sl_atr = self.close - self.atr * 2
             new_stop_loss = min(sl_percent, sl_atr)
             take_profit = 0
@@ -244,6 +269,10 @@ class Rente4_WVF(RentenStrategy):
             stop_loss_update = stop_loss_update or f"setting new stop loss level at {round(stop_loss, 4)}"
             ic(stop_loss_update)
             self.stop_loss = self.position.qty, stop_loss
+
+        if self.vars['max_profit'] < 5 < self.position.pnl_percentage:
+            ic("trying to take profit at 5% - 1.5% stop loss")
+            self.take_profit = self.position.qty, self.close * 0.987
 
         self.vars['max_profit'] = max(self.vars['max_profit'], self.position.pnl_percentage)
 
@@ -290,7 +319,7 @@ class Rente4_WVF(RentenStrategy):
     def num_worse_candles(self):
         worse_candles = 0
         lookback = 2
-        while self.candles[-lookback][2] < self.close:
+        while lookback < len(self.candles) and self.candles[-lookback][2] < self.close:
             worse_candles += 1
             lookback += 1
         return worse_candles

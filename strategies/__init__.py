@@ -55,7 +55,7 @@ class RentenStrategy(Strategy, ABC):
         self.vars.prev_trades = []
         self.reset_vars()
         self.debug = False
-        self.test_mode = True
+        self.record_trades = True
         ic.configureOutput(prefix=self.ic_prefix)
 
     def reset_vars(self):
@@ -125,7 +125,7 @@ class RentenStrategy(Strategy, ABC):
         return abs(self.range_p) > 25 and (abs(self.range_p / self.tr_p * 100) > 30)
 
     def save_trades(self):
-        if not self.debug or self.test_mode:
+        if not self.record_trades:
             return
         filename = 'trades.json'
         trades_dict = [trade.to_dict() for trade in self.vars['trades']]
