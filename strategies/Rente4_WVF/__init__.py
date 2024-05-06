@@ -12,24 +12,14 @@ class Rente4_WVF(RentenStrategy):
 
     def __init__(self):
         super().__init__()
-        self.vars = benedict(self.vars)
-        self.vars.trades = []
-        self.vars.prev_trades = []
-
         self.stop_loss_percentage = 0.97  # 3% stop loss
 
         self.debug = False
+        self.test_mode = False
         self.load_trades()
 
     def reset_vars(self):
-
-        self.vars['last_wvf'] = 0
-        self.vars['last_signal'] = 0
-        self.vars['max_stc'] = 0
-        self.vars['winning_cycle'] = False
-        self.vars['num_signals'] = []
-        self.vars['trade_next_stc'] = False
-        self.vars['max_profit'] = 0
+        self.vars.max_profit = 0
 
     def should_long(self) -> bool:
 
@@ -40,8 +30,10 @@ class Rente4_WVF(RentenStrategy):
             wvfs, signals = wrvf(self.candles, sequential=True)
             wvf = wvfs[-1]
             signal = signals[-1]
+            last_signal = signals[-2]
             # stc = ta.stc(self.candles)
 
+            # check the signal length
             lookback = 2
             signals_in_a_row = signal
             signal_length = 0
@@ -89,6 +81,10 @@ class Rente4_WVF(RentenStrategy):
                     lookback += 1
                 min_signal_strength += bad_trades * 1.5
 
+            # slight upwards movement gets rewarded
+            if 45 < self.lower_percentage < 65:
+                min_signal_strength /= 2
+
         # lets start from here
         ################################################################################################################
         trade = False
@@ -114,9 +110,8 @@ class Rente4_WVF(RentenStrategy):
         #         trade = True
 
         # case 2: acting after a signal
-        if self.vars['last_signal'] and not signal:
-            ic.configureOutput(prefix=f"{self.date} | ")
-            print("============================")
+        if last_signal and not signal:
+            print("==================")
             # ic(self.date)
             ic(round(min_signal_strength, 2), bad_trades)
             ic(self.lower_percentage)
@@ -124,12 +119,12 @@ class Rente4_WVF(RentenStrategy):
 
             trade = True
             # lets assume we start trading, but run a few more tests
-            max_signal = np.max(wvfs[-signal_length:])
+            max_signal = np.max(wvfs[-(signal_length + 1):])
             if max_signal < min_signal_strength:
-                ic("signal too week")
+                ic("signal too week", max_signal)
                 trade = False
 
-            if trade and signal_length > 5:
+            if trade and signals_in_a_row > 5:
                 ic(f"{signals_in_a_row} > 5 - not trading")
                 trade = False
 
@@ -141,6 +136,12 @@ class Rente4_WVF(RentenStrategy):
                     ((self.range_p / self.tr_p * 100) > 30)
                 )
                 trade = False
+
+                upward_movement = (self.close / lowest_low - 1) * 100
+                if upward_movement > 2:
+                    ic(upward_movement)
+                    trade = True
+
                 if self.tr_p > 100:
                     ic("tr_p > 100")
                     trade = True
@@ -158,14 +159,15 @@ class Rente4_WVF(RentenStrategy):
                 if last_trade.pnl_percentage < 0:
                     compare_time = self.candles[-signal_length][0]
                     if last_trade.exit_ts > compare_time:
-                        ic("last trade was a loss and within this signal period - not trading")
+                        print("last trade was a loss and within this signal period - not trading")
                         trade = False
 
-        self.vars['last_wvf'] = wvf
-        self.vars['last_signal'] = signal
+            if trade and self.down:
+                ic("downwards movement - not trading")
+                trade = False
 
-        # if self.date == '2024-04-03 01:00':
-        #     breakpoint()
+        if self.date == '2024-05-04 02:30':
+            breakpoint()
 
         if trade:
             ic(trade)
@@ -192,8 +194,10 @@ class Rente4_WVF(RentenStrategy):
         stop_atr = self.close - 2 * self.atr
         stop_percent = self.close * self.stop_loss_percentage
         stop_price = min(stop_atr, stop_percent)
+        self.vars.stop_loss_range = self.close - stop_price
         ic(stop_atr, stop_percent)
-        ic("setting stop price at", stop_price)
+
+        ic(f"setting stop price at {stop_price}")
         self.stop_loss = self.position.qty, stop_price
 
         trade = Trade(start=self.date)
@@ -218,31 +222,32 @@ class Rente4_WVF(RentenStrategy):
         #     breakpoint()
 
         # update stop loss
+        sl_last = self.stop_loss[0][1] if self.stop_loss is not None else 0
         if self.position.pnl_percentage > self.vars['max_profit']:
-            sl_percent = self.close * self.stop_loss_percentage
+            sl_percent = self.close - self.vars.stop_loss_range
             sl_atr = self.close - self.atr * 2
-            sl_last = self.stop_loss[0][1] if self.stop_loss is not None else 0
             new_stop_loss = min(sl_percent, sl_atr)
             take_profit = 0
-            message = ""
+            stop_loss_update = ""
 
-            if self.tr_p > 200 or self.percent > 2:
+            if self.percent > 2:
                 ic(self.percent)
                 take_profit = self.open + (self.close - self.open) * 0.66
                 ic(self.tr_p)
-                message = f"trying to take profit at {round(take_profit, 4)}"
+                stop_loss_update = f"trying to take profit at {round(take_profit, 4)}"
 
             stop_loss = max(new_stop_loss, sl_last, take_profit)
+            # ic(stop_loss, new_sl_percentage)
+            # stop_loss = stop_loss * new_sl_percentage
+            # ic("after", stop_loss)
             # ic(sl_percent, sl_atr, sl_last, take_profit)
-            message = message or f"setting new stop loss level at {round(stop_loss, 4)}"
-            ic(self.date)
-            print(message)
+            stop_loss_update = stop_loss_update or f"setting new stop loss level at {round(stop_loss, 4)}"
+            ic(stop_loss_update)
             self.stop_loss = self.position.qty, stop_loss
 
         self.vars['max_profit'] = max(self.vars['max_profit'], self.position.pnl_percentage)
 
     def on_close_position(self, order) -> None:
-        ic(self.date)
         if order.is_take_profit:
             ic("Take-profit closed the position")
         elif order.is_stop_loss:
@@ -264,11 +269,11 @@ class Rente4_WVF(RentenStrategy):
                     pnl_match = compare_trade.pnl_percentage == last_trade.pnl_percentage
 
                     if not exit_match:
-                        ic("EXIT DATE NOT MATCHING")
-                        message = f"prev pnl: {compare_trade.pnl_percentage}"
+                        message = f"EXIT DATE NOT MATCHING - was: {compare_trade.exit}"
                         print(message)
                     if not pnl_match:
-                        ic("PnL NOT MATCHING")
+                        message = f"PnL NOT MATCHING - was {compare_trade.pnl_percentage}"
+                        print(message)
 
                     stop = not (exit_match and pnl_match)
 

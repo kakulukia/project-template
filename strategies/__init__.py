@@ -1,5 +1,7 @@
 from abc import ABC
 
+from benedict import benedict
+from icecream import ic
 from jesse.strategies import Strategy
 from jesse import indicators as ta
 import pytz
@@ -48,8 +50,13 @@ class Trade:
 class RentenStrategy(Strategy, ABC):
     def __init__(self):
         super().__init__()
+        self.vars = benedict(self.vars)
+        self.vars.trades = []
+        self.vars.prev_trades = []
         self.reset_vars()
         self.debug = False
+        self.test_mode = True
+        ic.configureOutput(prefix=self.ic_prefix)
 
     def reset_vars(self):
         ...
@@ -57,6 +64,9 @@ class RentenStrategy(Strategy, ABC):
     @property
     def date(self):
         return datetime.fromtimestamp(self.current_candle[0] / 1000, tz=pytz.utc).strftime('%Y-%m-%d %H:%M')
+
+    def ic_prefix(self):
+        return f'{self.date} | '
 
     @property
     def tr(self):
@@ -115,7 +125,7 @@ class RentenStrategy(Strategy, ABC):
         return abs(self.range_p) > 25 and (abs(self.range_p / self.tr_p * 100) > 30)
 
     def save_trades(self):
-        if not self.debug:
+        if not self.debug or self.test_mode:
             return
         filename = 'trades.json'
         trades_dict = [trade.to_dict() for trade in self.vars['trades']]
@@ -132,3 +142,6 @@ class RentenStrategy(Strategy, ABC):
             self.vars.prev_trades = [Trade(**trade) for trade in trades_dict]
         except FileNotFoundError:
             pass
+
+    def terminate(self):
+        ic.configureOutput(prefix="ic| ")
