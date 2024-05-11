@@ -39,6 +39,7 @@ def chop_value(value):
 @dataclass
 class Trade:
     start: str
+    start_ts: int
     exit: str = None
     exit_ts: int = None
     pnl_percentage: float = None

@@ -3,20 +3,21 @@ from random import random
 import numpy as np
 import jesse.indicators as ta
 from jesse import utils
+
 from custom_indicators.wrvf import williams_vix_fix as wrvf
 from icecream import ic
 
 from strategies import RentenStrategy, Trade
 
 
-class Rente4_WVF(RentenStrategy):
+class Rente5_RSI_WVF(RentenStrategy):
 
     def __init__(self):
         super().__init__()
-        self.stop_loss_percentage = 0.97  # 3% stop loss
+        self.stop_loss_percentage = 0.94  # 6% stop loss
 
-        self.debug = False
-        self.record_trades = False
+        self.debug = True
+        self.record_trades = True
         self.load_trades()
 
         if not self.debug:
@@ -24,72 +25,46 @@ class Rente4_WVF(RentenStrategy):
 
     def reset_vars(self):
         self.vars.max_profit = 0
+        self.vars.low_rsi_ts = 0
+        self.vars.upper_rsi_reached = False
 
     def hyperparameters(self):
         return [
             {'name': 'max_signal_gap', 'type': int, 'min': 1, 'max': 50, 'default': 3},
-            {'name': 'lookback_candles', 'type': int, 'min': 1, 'max': 400, 'default': 77},
             {'name': 'min_signal_strength_lookback', 'type': int, 'min': 1, 'max': 400, 'default': 17},
             {'name': 'min_signal_multiplier', 'type': float, 'min': 0.1, 'max': 3., 'default': 0.66},
             {'name': 'min_signal_low', 'type': float, 'min': 0.1, 'max': 20., 'default': 2.},
-            {'name': 'bad_trades_period', 'type': int, 'min': 60_000, 'max': 20*24*60*60*1_000, 'default': 86_400_000},
-            {'name': 'bad_trades_penalty', 'type': float, 'min': 0.1, 'max': 5., 'default': 1.5},
-            {'name': 'signal_penalty_threshold', 'type': float, 'min': -20., 'max': 20., 'default': 0.},
-            {'name': 'signal_reward_threshold', 'type': float, 'min': -5., 'max': 20., 'default': 5.},
-            {'name': 'lower_percentage_min', 'type': float, 'min': 0., 'max': 100., 'default': 45.},
-            {'name': 'lower_percentage_max', 'type': float, 'min': 0., 'max': 100., 'default': 65.},
-            {'name': 'upward_reward_multiplier', 'type': float, 'min': 0.1, 'max': 3., 'default': 0.5},
-            {'name': 'max_signals_in_a_row', 'type': int, 'min': 1, 'max': 50, 'default': 5},
-            {'name': 'max_short_term_high', 'type': float, 'min': 0., 'max': 100., 'default': 5.},
-            {'name': 'max_worse_candles', 'type': int, 'min': 1, 'max': 50, 'default': 3},
-            {'name': 'lower_percentage_threshold', 'type': float, 'min': 0., 'max': 100., 'default': 77},
-            {'name': 'true_range_threshold', 'type': float, 'min': 0., 'max': 300., 'default': 100},
+            {'name': 'max_signal_length', 'type': int, 'min': 1, 'max': 50, 'default': 5},
+
+            # {'name': 'lookback_candles', 'type': int, 'min': 1, 'max': 400, 'default': 77},
+            # {'name': 'bad_trades_period', 'type': int, 'min': 60_000, 'max': 20 * 24 * 60 * 60 * 1_000,
+            #  'default': 86_400_000},
+            # {'name': 'bad_trades_penalty', 'type': float, 'min': 0.1, 'max': 5., 'default': 1.5},
+            # {'name': 'signal_penalty_threshold', 'type': float, 'min': -20., 'max': 20., 'default': 0.},
+            # {'name': 'signal_reward_threshold', 'type': float, 'min': -5., 'max': 20., 'default': 5.},
+            # {'name': 'lower_percentage_min', 'type': float, 'min': 0., 'max': 100., 'default': 45.},
+            # {'name': 'lower_percentage_max', 'type': float, 'min': 0., 'max': 100., 'default': 65.},
+            # {'name': 'upward_reward_multiplier', 'type': float, 'min': 0.1, 'max': 3., 'default': 0.5},
+            # {'name': 'max_short_term_high', 'type': float, 'min': 0., 'max': 100., 'default': 5.},
+            # {'name': 'max_worse_candles', 'type': int, 'min': 1, 'max': 50, 'default': 3},
+            # {'name': 'lower_percentage_threshold', 'type': float, 'min': 0., 'max': 100., 'default': 77},
+            # {'name': 'true_range_threshold', 'type': float, 'min': 0., 'max': 300., 'default': 100},
         ]
 
     def should_long(self) -> bool:
 
-        # stop_here = False
-        # if random() > 0.95:
-        #     stop_here = True
-        #     ic.enable()
-        # else:
-        #     ic.disable()
-
         # preparation
         ################################################################################################################
-        bad_trades = 0
         if True:
             wvfs, signals = wrvf(self.candles, sequential=True)
             wvf = wvfs[-1]
             signal = signals[-1]
             last_signal = signals[-2]
-            # stc = ta.stc(self.candles)
+            rsi = ta.rsi(self.candles, sequential=True)
+            rsi_ma = ta.sma(rsi, 14)
 
             # check the signal length
-            lookback = 2
-            signals_in_a_row = signal
-            signal_length = 0
-            gap = 0
-            while lookback < len(signals) and gap <= self.hp['max_signal_gap']:
-                if signals[-lookback]:
-                    signal_length += gap
-                    gap = 0
-                    signals_in_a_row += 1
-                else:
-                    gap += 1
-                lookback += 1
-            signal_length = int(signals_in_a_row + signal_length)
-
-            # check for the latest low
-            lookback_candles = self.hp['lookback_candles']
-            lowest_low = np.min(self.candles[-lookback_candles:, 4])
-            highest_high = np.max(self.candles[-lookback_candles:, 3])
-            high_index = np.argmax(self.candles[-lookback_candles:, 3])
-            lowest_close = np.min(self.candles[-lookback_candles + high_index:, 2])
-
-            # calculate percentage of low and high
-            low_percentage = (self.close - lowest_low) / lowest_low * 100
-            high_percentage = (highest_high - self.close) / self.close * 100
+            signal_length = self.get_signal_length(signals)
 
             # calculate the min signal strength
             indices = np.where(signals == 1)[0]
@@ -98,114 +73,50 @@ class Rente4_WVF(RentenStrategy):
             multiplier = self.hp['min_signal_multiplier']
             min_signal_strength = max([average_signal_strength * multiplier, self.hp['min_signal_low']])
 
-            # for any of the last trades that closed with a loss,
-            # add 1.5 to the min_signal_strength
-            if self.vars.trades:
-                lookback = 1
-                bad_trades = 0
-                while lookback < len(self.vars.trades):
-                    # but only count trades within the last day
-                    if self.vars.trades[-lookback].exit_ts < self.time - self.hp['bad_trades_period']:
-                        break
-                    if self.vars.trades[-lookback].pnl_percentage < self.hp['signal_penalty_threshold']:
-                        bad_trades += 1
-                    else:
-                        break
-                    lookback += 1
-                min_signal_strength += bad_trades * self.hp['bad_trades_penalty']
-
-                # good trade bonus
-                if self.vars.trades[-lookback].pnl_percentage > self.hp['signal_reward_threshold']:
-                    min_signal_strength -= 1
-
-            # slight upwards movement gets rewarded
-            if self.hp['lower_percentage_min'] < self.lower_percentage < self.hp['lower_percentage_max']:
-                min_signal_strength *= self.hp['upward_reward_multiplier']
-
         # lets start from here
         ################################################################################################################
         trade = False
         ################################################################################################################
+        # min rsi is valid for one day - reset if we went past it
+        check_time = self.vars.low_rsi_ts + 24 * 60 * 60 * 1_000
+        if self.time > check_time:
+            self.vars.low_rsi_ts = 0
 
-        # # case 1:  acting on a weaker signal
-        # if signal and wvf < wvfs[-2] - 0.5:
-        #     ic(self.date)
-        #     ic("wvf kleiner")
-        #     if self.up and self.strong:
-        #         ic("strong up")
-        #         # if self.high < self.candles[-2][3]:
-        #         #     ic("Kerze schießt nicht übers Ziel hinaus")
-        #         trade = True
-        #
-        #     if self.tr_p > 100 and self.up:
-        #         ic("tr_p > 100")
-        #         ic("lets go!")
-        #         trade = True
-        #
-        #     if self.down and self.close > lowest_close:
-        #         ic("down - but looking good")
-        #         trade = True
-
-        # case 2: acting after a signal
         if last_signal and not signal:
-            # print("==================")
-            # ic(self.date)
-            ic(round(min_signal_strength, 2), bad_trades)
-            ic(self.lower_percentage)
-            ic(signals_in_a_row, signal_length,)
+            print("==================")
+            ic(round(min_signal_strength, 2))
+            ic(signal_length)
 
-            trade = True
-            # lets assume we start trading, but run a few more tests
-            max_signal = np.max(wvfs[-(signal_length + 1):])
-            if max_signal < min_signal_strength:
-                ic("signal too week", max_signal)
-                trade = False
+            # get the min rsi withing the signal length
+            min_rsi = np.min(rsi[-(signal_length + 1):])
+            ic(min_rsi, rsi[-1], rsi_ma)
 
-            if trade and signals_in_a_row > self.hp['max_signals_in_a_row']:
-                ic(f"{signals_in_a_row} > {self.hp['max_signals_in_a_row']} - not trading")
-                trade = False
+            if min_rsi < 25 or self.vars.low_rsi_ts:
+                # both conditions match - we could trade
+                trade = True
+                if not self.vars.low_rsi_ts:
+                    self.vars.low_rsi_ts = self.time
 
-            # if trade and not self.strong:
-            #     ic("not strong enough")
-            #     ic(
-            #         self.range_p, self.range_p > 25, self.tr_p,
-            #         (self.range_p / self.tr_p * 100),
-            #         ((self.range_p / self.tr_p * 100) > 30)
-            #     )
-            #     trade = False
-            #
-            #     upward_movement = (self.close / lowest_low - 1) * 100
-            #     if upward_movement > 2:
-            #         ic(upward_movement)
-            #         trade = True
-            #
-            #     if self.tr_p > 100:
-            #         ic("tr_p > 100")
-            #         trade = True
-
-            if trade and self.short_term_high > self.hp['max_short_term_high']:
-                if self.close == lowest_close:
-                    ic("free fall - not trading")
-                    trade = False
-                if self.num_worse_candles < self.hp['max_worse_candles']:
-                    ic("risky trade - not trading")
+                if rsi[-1] < rsi_ma:
+                    ic("RSI is below its moving average - not trading")
                     trade = False
 
-            # if trade and self.vars.trades:
-            #     last_trade = self.vars.trades[-1]
-            #     if last_trade.pnl_percentage < 0:
-            #         compare_time = self.candles[-signal_length][0]
-            #         if last_trade.exit_ts > compare_time:
-            #             print("last trade was a loss and within this signal period - not trading")
-            #             trade = False
-
-            if trade and self.down:
-                if self.lower_percentage < self.hp['lower_percentage_threshold'] or self.tr_p > self.hp['true_range_threshold']:
-                    ic("downwards movement - not trading")
+                max_signal = np.max(wvfs[-(signal_length + 1):])
+                if max_signal < min_signal_strength:
+                    ic("signal too week", max_signal)
                     trade = False
 
-        # if self.date == '2024-05-04 02:30':
-        #     breakpoint()
+                if trade and signal_length > self.hp['max_signal_length']:
+                    ic(f"{signal_length} > {self.hp['max_signal_length']} - not trading")
+                    trade = False
+
+                if trade and self.short_term_high < -5:
+                    price_was_falling = f"by {round(self.short_term_high, 2)} - not trading"
+                    ic(price_was_falling)
+                    trade = False
+
+        if self.date == '2024-04-14 17:30':
+            breakpoint()
 
         if trade:
             ic(trade)
@@ -220,16 +131,6 @@ class Rente4_WVF(RentenStrategy):
                         stop = False
             if stop and self.debug:
                 breakpoint()
-
-            # if stop_here:
-            #     breakpoint()
-        # else:
-        #     next_trade_index = len(self.vars.trades)
-        #     if self.vars.prev_trades and len(self.vars.prev_trades) > next_trade_index:
-        #         next_trade = self.vars.prev_trades[next_trade_index]
-        #         if self.date == next_trade.start:
-        #             ic("WE FORGOT SOMETHING")
-        #             breakpoint()
 
         return trade
 
@@ -270,8 +171,32 @@ class Rente4_WVF(RentenStrategy):
 
         # update stop loss
         sl_last = self.stop_loss[0][1] if self.stop_loss is not None else 0
+        rsi = ta.rsi(self.candles, sequential=True)
+        rsi_ma = ta.sma(rsi, 14)
+        if rsi[-1] > 70:
+            ic("RSI is above 70 - using more aggressive stopp loss")
+            self.vars.upper_rsi_reached = True
+        if rsi_ma > rsi[-1]:
+            self.vars.upper_rsi_reached = True
+
+            # get the last high since the trade started
+            indices = np.where(self.candles[:, 0] > self.vars.trades[-1].start_ts)
+            trade_candles = self.candles[indices]
+            high = np.max(trade_candles[:, 3])
+
+            new_stop_loss = high * 0.98
+            stop_loss = max(new_stop_loss, sl_last)
+            if stop_loss > sl_last:
+                ic("RSI is below its moving average - using more aggressive stopp loss")
+                stop_loss_update = f"setting new stop loss level at {round(stop_loss, 4)}"
+                ic(stop_loss_update)
+                self.stop_loss = self.position.qty, stop_loss
+
         if self.position.pnl_percentage > self.vars['max_profit']:
+
             sl_percent = self.close * self.stop_loss_percentage
+            if self.vars.upper_rsi_reached:
+                sl_percent = self.close * 0.98
             sl_atr = self.close - self.atr * 2
             new_stop_loss = min(sl_percent, sl_atr)
             take_profit = 0
@@ -284,10 +209,6 @@ class Rente4_WVF(RentenStrategy):
                 stop_loss_update = f"trying to take profit at {round(take_profit, 4)}"
 
             stop_loss = max(new_stop_loss, sl_last, take_profit)
-            # ic(stop_loss, new_sl_percentage)
-            # stop_loss = stop_loss * new_sl_percentage
-            # ic("after", stop_loss)
-            # ic(sl_percent, sl_atr, sl_last, take_profit)
             stop_loss_update = stop_loss_update or f"setting new stop loss level at {round(stop_loss, 4)}"
             ic(stop_loss_update)
             self.stop_loss = self.position.qty, stop_loss
@@ -377,4 +298,20 @@ class Rente4_WVF(RentenStrategy):
         return (self.close / high - 1) * 100
 
     # def dna(self):
-    #     return 'iaN5Cu/)m-@.oUTn@'
+    #     return 'FIF-?71/;4fRFF9LA'
+
+    def get_signal_length(self, signals):
+        lookback = 2
+        signals_in_a_row = signals[-1]
+        signal_length = 0
+        gap = 0
+        while lookback < len(signals) and gap <= self.hp['max_signal_gap']:
+            if signals[-lookback]:
+                signal_length += gap
+                gap = 0
+                signals_in_a_row += 1
+            else:
+                gap += 1
+            lookback += 1
+        signal_length = int(signals_in_a_row + signal_length)
+        return signal_length

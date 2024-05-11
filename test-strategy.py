@@ -9,11 +9,11 @@ from jesse.research import backtest, get_candles
 ################################################
 # from strategies.Rente3_ChopSTC import Rente3_ChopSTC
 # strategy_class = Rente3_ChopSTC
-from strategies.Rente4_WVF import Rente4_WVF
-strategy_class = Rente4_WVF
+from strategies.Rente5_RSI_WVF import Rente5_RSI_WVF
+strategy_class = Rente5_RSI_WVF
 
-start = jh.date_to_timestamp('2024-04-01')
-end = jh.date_to_timestamp('2024-04-24')
+start = jh.date_to_timestamp('2024-01-01')
+end = jh.date_to_timestamp('2024-05-06')
 
 symbols = [
     # 'BTC-USDT',
@@ -32,17 +32,17 @@ time_frames = [
     # '1m',
     # '3m',
     # '5m',
-    '15m',
+    # '15m',
     '30m',
-    '45m',
-    '1h',
-    '2h',
-    '3h',
-    '4h',
-    '6h',
-    '8h',
-    '12h',
-    '1D',
+    # '45m',
+    # '1h',
+    # '2h',
+    # '3h',
+    # '4h',
+    # '6h',
+    # '8h',
+    # '12h',
+    # '1D',
     # '45m',
     # '1h',
     # '2h',
@@ -120,6 +120,7 @@ for symbol in symbols:
         )
         print("====================================================")
         print(f"Results for {symbol} on {time_frame}")
+        ic.enable()
         ic(result)
         results[time_frame].append(result['metrics'][test_metric])
 
