@@ -9,11 +9,10 @@ from jesse.research import backtest, get_candles
 ################################################
 # from strategies.Rente3_ChopSTC import Rente3_ChopSTC
 # strategy_class = Rente3_ChopSTC
-from strategies.Rente5_RSI_WVF import Rente5_RSI_WVF
-strategy_class = Rente5_RSI_WVF
+from strategies.SlowTrendFollowing import SlowTrendFollowing as StrategyClass
 
 start = jh.date_to_timestamp('2024-01-01')
-end = jh.date_to_timestamp('2024-05-06')
+end = jh.date_to_timestamp('2024-05-13')
 
 symbols = [
     # 'BTC-USDT',
@@ -33,9 +32,9 @@ time_frames = [
     # '3m',
     # '5m',
     # '15m',
-    '30m',
+    # '30m',
     # '45m',
-    # '1h',
+    '1h',
     # '2h',
     # '3h',
     # '4h',
@@ -60,7 +59,7 @@ time_frames = [
 test_metric = 'net_profit_percentage'
 ################################################
 
-exchange_name = exchanges.BINANCE_SPOT
+exchange_name = exchanges.BYBIT_USDT_PERPETUAL
 config = {
     'starting_balance': 1_000,
     'fee': 0.001,
@@ -89,7 +88,7 @@ for symbol in symbols:
             exchange_name, symbol, '1m',
             start, end, warmup_candles_num=warmup_candles_num, is_for_jesse=True)
         routes = [
-            {'exchange': exchange_name, 'strategy': strategy_class, 'symbol': symbol, 'timeframe': time_frame}
+            {'exchange': exchange_name, 'strategy': StrategyClass, 'symbol': symbol, 'timeframe': time_frame}
         ]
         extra_routes = []
         test_candles = {
