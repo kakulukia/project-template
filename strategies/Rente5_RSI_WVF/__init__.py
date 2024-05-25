@@ -2,10 +2,13 @@ from random import random
 
 import numpy as np
 import jesse.indicators as ta
+from custom_indicators import cae
 from jesse import utils
 
 from custom_indicators.wrvf import williams_vix_fix as wrvf
 from icecream import ic
+import openpyxl
+from openpyxl import Workbook
 
 from strategies import RentenStrategy, Trade
 
@@ -22,6 +25,15 @@ class Rente5_RSI_WVF(RentenStrategy):
 
         if not self.debug:
             ic.disable()
+
+        # Initialisierung der Excel-Datei und des Arbeitsblatts
+        self.wb = Workbook()
+        self.ws = self.wb.active
+        self.ws.title = "Candle Daten"
+        # Hinzufügen von Kopfzeilen
+        headers = ["Datum", "Open", "Close", "High", "Low", "Volume", "WVF",
+                   "Signal", "RSI", "RSI_MA", "Signal_Länge", "chop"]
+        self.ws.append(headers)
 
     def reset_vars(self):
         self.vars.max_profit = 0
@@ -57,14 +69,18 @@ class Rente5_RSI_WVF(RentenStrategy):
         ################################################################################################################
         if True:
             wvfs, signals = wrvf(self.candles, sequential=True)
-            wvf = wvfs[-1]
             signal = signals[-1]
             last_signal = signals[-2]
             rsi = ta.rsi(self.candles, sequential=True)
-            rsi_ma = ta.sma(rsi, 14)
+            rsi_ma = ta.sma(rsi, 14, sequential=True)
+            chop = cae(self.candles, sequential=True)
 
             # check the signal length
             signal_length = self.get_signal_length(signals)
+
+            row = [self.date, self.open, self.close, self.high, self.low, self.volume, wvfs[-1],
+                   signal, rsi[-1], rsi_ma[-1], signal_length, chop[-1]]
+            self.ws.append(row)
 
             # calculate the min signal strength
             indices = np.where(signals == 1)[0]
@@ -97,7 +113,7 @@ class Rente5_RSI_WVF(RentenStrategy):
                 if not self.vars.low_rsi_ts:
                     self.vars.low_rsi_ts = self.time
 
-                if rsi[-1] < rsi_ma:
+                if rsi[-1] < rsi_ma[-1]:
                     ic("RSI is below its moving average - not trading")
                     trade = False
 
@@ -115,8 +131,8 @@ class Rente5_RSI_WVF(RentenStrategy):
                     ic(price_was_falling)
                     trade = False
 
-        if self.date == '2024-04-14 17:30':
-            breakpoint()
+        # if self.date == '2024-04-14 17:30':
+        #     breakpoint()
 
         if trade:
             ic(trade)
@@ -182,15 +198,16 @@ class Rente5_RSI_WVF(RentenStrategy):
             # get the last high since the trade started
             indices = np.where(self.candles[:, 0] > self.vars.trades[-1].start_ts)
             trade_candles = self.candles[indices]
-            high = np.max(trade_candles[:, 3])
+            if trade_candles.size != 0:
+                high = np.max(trade_candles[:, 3])
 
-            new_stop_loss = high * 0.98
-            stop_loss = max(new_stop_loss, sl_last)
-            if stop_loss > sl_last:
-                ic("RSI is below its moving average - using more aggressive stopp loss")
-                stop_loss_update = f"setting new stop loss level at {round(stop_loss, 4)}"
-                ic(stop_loss_update)
-                self.stop_loss = self.position.qty, stop_loss
+                new_stop_loss = high * 0.98
+                stop_loss = max(new_stop_loss, sl_last)
+                if stop_loss > sl_last:
+                    ic("RSI is below its moving average - using more aggressive stopp loss")
+                    stop_loss_update = f"setting new stop loss level at {round(stop_loss, 4)}"
+                    ic(stop_loss_update)
+                    self.stop_loss = self.position.qty, stop_loss
 
         if self.position.pnl_percentage > self.vars['max_profit']:
 
@@ -315,3 +332,7 @@ class Rente5_RSI_WVF(RentenStrategy):
             lookback += 1
         signal_length = int(signals_in_a_row + signal_length)
         return signal_length
+
+    def terminate(self):
+        self.wb.save("candle_daten.xlsx")
+        super().terminate()

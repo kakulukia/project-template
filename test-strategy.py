@@ -9,10 +9,10 @@ from jesse.research import backtest, get_candles
 ################################################
 # from strategies.Rente3_ChopSTC import Rente3_ChopSTC
 # strategy_class = Rente3_ChopSTC
-from strategies.SlowTrendFollowing import SlowTrendFollowing as StrategyClass
+from strategies.Rente5_RSI_WVF import Rente5_RSI_WVF as StrategyClass
 
-start = jh.date_to_timestamp('2024-01-01')
-end = jh.date_to_timestamp('2024-05-13')
+start = jh.date_to_timestamp('2024-04-01')
+end = jh.date_to_timestamp('2024-05-01')
 
 symbols = [
     # 'BTC-USDT',
@@ -32,9 +32,9 @@ time_frames = [
     # '3m',
     # '5m',
     # '15m',
-    # '30m',
+    '30m',
     # '45m',
-    '1h',
+    # '1h',
     # '2h',
     # '3h',
     # '4h',
@@ -64,7 +64,7 @@ config = {
     'starting_balance': 1_000,
     'fee': 0.001,
     # accepted values are 'spot' and 'futures'
-    'type': 'spot',
+    'type': 'futures',
     # only used if type is 'futures'
     'futures_leverage': 2,
     # only used if type is 'futures'

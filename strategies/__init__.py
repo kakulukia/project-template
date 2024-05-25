@@ -146,3 +146,7 @@ class RentenStrategy(Strategy, ABC):
 
     def terminate(self):
         ic.configureOutput(prefix="ic| ")
+
+    @property
+    def volume(self):
+        return self.candles[-1][5]

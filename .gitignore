@@ -36,3 +36,5 @@ routes.py
 .env
 .venv
 storage
+docker
+strategies/SlowTrendFollowing
